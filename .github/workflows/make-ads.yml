@@ -1,0 +1,58 @@
+name: make-ads
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "How many ads to build"
+        default: "1"
+      voice:
+        description: "auto / gemini / edge / mock"
+        default: "auto"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip install -q pillow numpy python-bidi edge-tts
+
+      - name: Arrange assets
+        run: |
+          mkdir -p assets/fonts
+          for f in background.png logo.png sound.m4a tick.wav end_sound.wav; do [ -f "$f" ] && mv -n "$f" assets/ || true; done
+          for f in Heebo-800.ttf Heebo-900.ttf Heebo-LICENSE.txt; do [ -f "$f" ] && mv -n "$f" assets/fonts/ || true; done
+          ls -R assets
+
+      - name: Build ads
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          mkdir -p videos
+          DONE=0
+          if [ -f state.json ]; then DONE=$(python3 -c "import json;print(json.load(open('state.json'))['done'])"); fi
+          echo "already done: $DONE"
+          python3 make_ads.py bank.txt --voice "${{ github.event.inputs.voice }}" --skip "$DONE" --count "${{ github.event.inputs.count }}" --out videos
+          LAST=$(ls videos | sed -n 's/^ad_0*\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1)
+          echo "{\"done\": ${LAST:-0}}" > state.json
+          cat state.json
+
+      - name: Commit videos
+        run: |
+          git config user.name "ads-bot"
+          git config user.email "ads-bot@users.noreply.github.com"
+          git add videos state.json
+          git commit -m "Add generated ads" || echo "nothing to commit"
+          git push
