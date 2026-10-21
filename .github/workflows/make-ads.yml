@@ -9,6 +9,15 @@ on:
       voice:
         description: "auto / gemini / edge / mock"
         default: "auto"
+      bank:
+        description: "Question bank file"
+        default: "bank.txt"
+      out:
+        description: "Output folder"
+        default: "videos"
+      use_state:
+        description: "true = continue from state.json and update it"
+        default: "true"
 
 permissions:
   contents: write
@@ -40,19 +49,24 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          mkdir -p videos
+          BANK="${{ github.event.inputs.bank }}"
+          OUT="${{ github.event.inputs.out }}"
+          USE_STATE="${{ github.event.inputs.use_state }}"
+          mkdir -p "$OUT"
           DONE=0
-          if [ -f state.json ]; then DONE=$(python3 -c "import json;print(json.load(open('state.json'))['done'])"); fi
+          if [ "$USE_STATE" = "true" ] && [ -f state.json ]; then DONE=$(python3 -c "import json;print(json.load(open('state.json'))['done'])"); fi
           echo "already done: $DONE"
-          python3 make_ads.py bank.txt --voice "${{ github.event.inputs.voice }}" --skip "$DONE" --count "${{ github.event.inputs.count }}" --out videos
-          LAST=$(ls videos | sed -n 's/^ad_0*\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1)
-          echo "{\"done\": ${LAST:-0}}" > state.json
-          cat state.json
+          python3 make_ads.py "$BANK" --voice "${{ github.event.inputs.voice }}" --skip "$DONE" --count "${{ github.event.inputs.count }}" --out "$OUT"
+          if [ "$USE_STATE" = "true" ]; then
+            LAST=$(ls "$OUT" | sed -n 's/^ad_0*\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1)
+            echo "{\"done\": ${LAST:-0}}" > state.json
+            cat state.json
+          fi
 
       - name: Commit videos
         run: |
           git config user.name "ads-bot"
           git config user.email "ads-bot@users.noreply.github.com"
-          git add videos state.json
+          git add videos* state.json 2>/dev/null || true
           git commit -m "Add generated ads" || echo "nothing to commit"
           git push
