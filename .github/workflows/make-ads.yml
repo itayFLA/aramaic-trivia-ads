@@ -45,11 +45,56 @@ jobs:
           for f in Heebo-800.ttf Heebo-900.ttf Heebo-LICENSE.txt; do [ -f "$f" ] && mv -n "$f" assets/fonts/ || true; done
           ls -R assets
 
+      - name: Prepare bank (random answer order, drop incomplete ad)
+        run: |
+          python3 - "${{ github.event.inputs.bank }}" prepared_bank.txt <<'PY'
+          import sys, random, hashlib, itertools
+          src, dst = sys.argv[1], sys.argv[2]
+          lines = open(src, encoding='utf-8-sig').read().split('\n')
+          def special(s):
+              s = s.strip()
+              return s == '' or s == '---' or s.startswith('//') or s.startswith('#')
+          blocks, i = [], 0
+          while i < len(lines):
+              if special(lines[i]):
+                  i += 1
+                  continue
+              j = i
+              while j < len(lines) and not special(lines[j]):
+                  j += 1
+              blocks.append((i, j))
+              i = j
+          allowed = [s for s in itertools.product(range(3), repeat=3) if len(set(s)) > 1 and s not in ((0, 1, 2), (2, 1, 0))]
+          def md5i(t):
+              return int(hashlib.md5(t.strip().encode('utf-8')).hexdigest(), 16)
+          for k, (a, b) in enumerate(blocks):
+              blk = lines[a:b]
+              if len(blk) != 4:
+                  continue
+              ad_first = lines[blocks[(k // 3) * 3][0]]
+              seq = allowed[md5i(ad_first) % len(allowed)]
+              target = seq[k % 3]
+              ans = blk[1:]
+              marked = [x for x in ans if x.strip().startswith('*')]
+              if len(marked) != 1:
+                  continue
+              others = [x for x in ans if x is not marked[0]]
+              random.Random(md5i(blk[0])).shuffle(others)
+              others.insert(target, marked[0])
+              lines[a:b] = [blk[0]] + others
+          extra = len(blocks) % 3
+          if extra:
+              print(f'ignoring {extra} leftover question(s) at the end')
+              lines = lines[:blocks[-extra][0]]
+          open(dst, 'w', encoding='utf-8').write('\n'.join(lines))
+          print(f'{len(blocks)} questions, answers shuffled')
+          PY
+
       - name: Build ads
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          BANK="${{ github.event.inputs.bank }}"
+          BANK="prepared_bank.txt"
           OUT="${{ github.event.inputs.out }}"
           USE_STATE="${{ github.event.inputs.use_state }}"
           mkdir -p "$OUT"
