@@ -49,7 +49,7 @@ jobs:
         run: |
           BANKIN="${{ github.event.inputs.bank }}"
           if [ "$BANKIN" = "bank.txt" ]; then
-            for f in $(ls bank*.txt | sort); do echo "using $f"; cat "$f"; printf '\n\n'; done > combined_bank.txt
+            for f in $(ls bank*.txt | sort); do echo "using $f" >&2; cat "$f"; printf '\n\n'; done > combined_bank.txt
           else
             cp "$BANKIN" combined_bank.txt
           fi
