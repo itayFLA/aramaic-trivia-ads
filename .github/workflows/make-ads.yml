@@ -10,7 +10,7 @@ on:
         description: "auto / gemini / edge / mock"
         default: "auto"
       bank:
-        description: "Question bank file"
+        description: "Question bank file (default bank.txt = all bank*.txt files in order)"
         default: "bank.txt"
       out:
         description: "Output folder"
@@ -47,7 +47,13 @@ jobs:
 
       - name: Prepare bank (random answer order, drop incomplete ad)
         run: |
-          python3 - "${{ github.event.inputs.bank }}" prepared_bank.txt <<'PY'
+          BANKIN="${{ github.event.inputs.bank }}"
+          if [ "$BANKIN" = "bank.txt" ]; then
+            for f in $(ls bank*.txt | sort); do echo "using $f"; cat "$f"; printf '\n\n'; done > combined_bank.txt
+          else
+            cp "$BANKIN" combined_bank.txt
+          fi
+          python3 - combined_bank.txt prepared_bank.txt <<'PY'
           import sys, random, hashlib, itertools
           src, dst = sys.argv[1], sys.argv[2]
           lines = open(src, encoding='utf-8-sig').read().split('\n')
